@@ -1,0 +1,30 @@
+name: clang-tidy
+
+on:
+  pull_requests:
+    branches: [master]
+
+env:
+  BUILD: build
+
+jobs:
+  runs-on: ubuntu-latest
+
+  steps:
+    uses: actions/checkout@v2
+
+    name: Create ./build path
+    shell: bash
+    working-directory: ${{runner.workspace}}
+    runs: mkdir $BUILD && cd $BUILD
+
+    name: Execute CMAKE
+    shell: bash
+    working-directory: ${{runner.workspace}}/$BUILD
+    runs: cmake ../ -DCMAKE_INSTALL_PREFIX=$INSTALL_DIR -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+    name: Execute clang-tidy
+    shell: bash
+    working-directory: ${{runner.workspace}}/$BUILD
+    runs: cd .. && lang-tidy -p=./$BUILD/ -warnings-as-errors="*" -checks="-*,clang-analyzer-*,bugprone-*,hicpp-*,modernize-*,openmp-*" nsa.cpp
+
