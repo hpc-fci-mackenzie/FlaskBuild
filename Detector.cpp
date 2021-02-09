@@ -4,7 +4,14 @@
 #include <iostream>
 #include <set>
 #include <string>
+#include <queue>
+#include <pthread.h>
 #include "Debug.hpp"
+
+#define DETECTOR_BAG_SIZE 64000
+void *buffer[DETECTOR_BAG_SIZE];
+int in = 0;
+int out = 0;
 
 Detector::Detector(ConfigFile configFile, std::vector<datatype *> *selfDataset)
 {
@@ -30,25 +37,16 @@ std::vector<datatype *> *Detector::generateDetectors()
 {
     std::vector<datatype *> *detectors = new std::vector<datatype *>();
     std::cout << "Generating detectors..." << std::endl;
-    datatype *detector = new datatype[fConfigFile.getProblemSize()];
-    do
-    {
-        randomVector(detector);
-        if (!geometry.matches(detector, fSelfDataset, fConfigFile.getMinDist()))
-        {
-            if (!geometry.matches(detector, detectors, 0.0))
-            {
-                detectors->push_back(detector);
-                detector = new datatype[fConfigFile.getProblemSize()];
-                std::cout << detectors->size() << "/" << fConfigFile.getMaxDetectors() << std::endl;
-            }
-        }
-    } while (detectors->size() < fConfigFile.getMaxDetectors());
+    pthread_t producerThread, consumerThread;
 
-    if (detector != *detectors->cend())
-    {
-        delete[] detector;
-    }
+    pthread_create(&producerThread, NULL, producer, NULL);
+    pthread_create(&consumerThread, NULL, consumer, NULL);
+
+    pthread_setname_np(producerThread, "producerThread");
+    pthread_setname_np(consumerThread, "consumerThread");
+
+    pthread_join(producerThread, NULL);
+    pthread_join(consumerThread, NULL);
 
     return detectors;
 }
@@ -115,4 +113,43 @@ result Detector::applyDetectors(std::vector<datatype *> *detectors)
     result.FAR = (newDetectedSize / expectedDetectedSize);
 
     return result;
+}
+
+void *Detector::producer()
+{
+    datatype *detector = new datatype[fConfigFile.getProblemSize()];
+    while (((in + 1) % DETECTOR_BAG_SIZE) == out)
+    { //sleep
+        ;
+    }
+    buffer[in] = randomVector(detector);
+    in = (in + 1) % DETECTOR_BAG_SIZE;
+}
+
+void *Detector::consumer(std::vector<datatype *> *detectors)
+{
+    datatype *nextDetector;
+    while (in == out)
+    {
+        ;
+    }
+    nextDetector = buffer[out];
+    do
+    {
+        if (!geometry.matches(nextDetector, fSelfDataset, fConfigFile.getMinDist()))
+        {
+            if (!geometry.matches(nextDetector, detectors, 0.0))
+            {
+                detectors->push_back(nextDetector);
+                nextDetector = new datatype[fConfigFile.getProblemSize()];
+                std::cout << detectors->size() << "/" << fConfigFile.getMaxDetectors() << std::endl;
+            }
+        }
+    } while (detectors->size() < fConfigFile.getMaxDetectors());
+
+    if (nextDetector != *detectors->cend())
+    {
+        delete[] nextDetector;
+    }
+    out = (out + 1) % DETECTOR_BAG_SIZE;
 }

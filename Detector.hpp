@@ -16,10 +16,12 @@ private:
     Geometry geometry;
 
 public:
-    Detector(ConfigFile, std::vector<datatype *>*);
+    Detector(ConfigFile, std::vector<datatype *> *);
     void randomVector(datatype *);
     std::vector<datatype *> *generateDetectors();
-    result applyDetectors(std::vector<datatype*> *);
+    result applyDetectors(std::vector<datatype *> *);
+    void *producer();
+    void *consumer(std::vector<datatype *> *);
 };
 
 #endif
