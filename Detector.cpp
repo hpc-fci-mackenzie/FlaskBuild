@@ -1,23 +1,18 @@
 #include "Detector.hpp"
+#include <assert.h>
 #include <cstdlib>
-#include <cmath>
 #include <iostream>
+#include <cmath>
 #include <set>
 #include <string>
-#include <queue>
-#include <pthread.h>
 #include "Debug.hpp"
-
-#define DETECTOR_BAG_SIZE 64000
-void *buffer[DETECTOR_BAG_SIZE];
-int in = 0;
-int out = 0;
+#include "Datatype.hpp"
+#include "Geometry.hpp"
 
 Detector::Detector(ConfigFile configFile, std::vector<datatype *> *selfDataset)
 {
-    //fConfigFile = new ConfigFile();
     fConfigFile = configFile;
-    geometry.setProblemSize(configFile.getProblemSize());
+    fGeometry.setProblemSize(configFile.getProblemSize());
     fSelfDataset = selfDataset;
 }
 
@@ -33,20 +28,59 @@ void Detector::randomVector(datatype *vector)
     }
 }
 
+void Detector::producer(buffer_t *b, datatype *detector)
+{
+    pthread_mutex_lock(&b->mutex);
+    while (b->occupied >= DETECTOR_BAG_SIZE)
+        pthread_cond_wait(&b->less, &b->mutex);
+    assert(b->occupied < DETECTOR_BAG_SIZE);
+
+    b->buf[b->nextin] = detector;
+    randomVector(b->buf[b->nextin]);
+    b->nextin %= DETECTOR_BAG_SIZE;
+    b->occupied++;
+    pthread_cond_signal(&b->more);
+    pthread_mutex_unlock(&b->mutex);
+}
+
+void Detector::consumer(buffer_t *b, datatype *detector, std::vector<datatype *> *detectors)
+{
+    pthread_mutex_lock(&b->mutex);
+    while (b->occupied <= 0)
+        pthread_cond_wait(&b->more, &b->mutex);
+    assert(b->occupied > 0);
+    detector = b->buf[b->nextout++];
+    if (!fGeometry.matches(detector, fSelfDataset, fConfigFile.getMinDist()))
+    {
+        if (!fGeometry.matches(detector, detectors, 0.0))
+        {
+            detectors->push_back(detector);
+            detector = new datatype[fConfigFile.getProblemSize()];
+            std::cout << detectors->size() << "/" << fConfigFile.getMaxDetectors() << std::endl;
+        }
+    }
+    b->nextout %= DETECTOR_BAG_SIZE;
+    b->occupied--;
+    pthread_cond_signal(&b->less);
+    pthread_mutex_unlock(&b->mutex);
+}
+
 std::vector<datatype *> *Detector::generateDetectors()
 {
     std::vector<datatype *> *detectors = new std::vector<datatype *>();
     std::cout << "Generating detectors..." << std::endl;
-    pthread_t producerThread, consumerThread;
+    datatype *detector = new datatype[fConfigFile.getProblemSize()];
+    do
+    {
+        producer(fDetectorBag, detector);
+        consumer(fDetectorBag, detector, detectors);
 
-    pthread_create(&producerThread, NULL, producer, NULL);
-    pthread_create(&consumerThread, NULL, consumer, NULL);
+    } while (detectors->size() < fConfigFile.getMaxDetectors());
 
-    pthread_setname_np(producerThread, "producerThread");
-    pthread_setname_np(consumerThread, "consumerThread");
-
-    pthread_join(producerThread, NULL);
-    pthread_join(consumerThread, NULL);
+    if (detector != *detectors->cend())
+    {
+        delete[] detector;
+    }
 
     return detectors;
 }
@@ -56,8 +90,8 @@ result Detector::applyDetectors(std::vector<datatype *> *detectors)
     int trial = 1;
     for (auto it = fSelfDataset->cbegin(); it != fSelfDataset->cend(); it++)
     {
-        bool actual = geometry.matches(*it, detectors, fConfigFile.getMinDist());
-        bool expected = geometry.matches(*it, fSelfDataset, fConfigFile.getMinDist());
+        bool actual = fGeometry.matches(*it, detectors, fConfigFile.getMinDist());
+        bool expected = fGeometry.matches(*it, fSelfDataset, fConfigFile.getMinDist());
         if (actual == expected)
         {
             detected->insert(trial);
@@ -113,43 +147,4 @@ result Detector::applyDetectors(std::vector<datatype *> *detectors)
     result.FAR = (newDetectedSize / expectedDetectedSize);
 
     return result;
-}
-
-void *Detector::producer()
-{
-    datatype *detector = new datatype[fConfigFile.getProblemSize()];
-    while (((in + 1) % DETECTOR_BAG_SIZE) == out)
-    { //sleep
-        ;
-    }
-    buffer[in] = randomVector(detector);
-    in = (in + 1) % DETECTOR_BAG_SIZE;
-}
-
-void *Detector::consumer(std::vector<datatype *> *detectors)
-{
-    datatype *nextDetector;
-    while (in == out)
-    {
-        ;
-    }
-    nextDetector = buffer[out];
-    do
-    {
-        if (!geometry.matches(nextDetector, fSelfDataset, fConfigFile.getMinDist()))
-        {
-            if (!geometry.matches(nextDetector, detectors, 0.0))
-            {
-                detectors->push_back(nextDetector);
-                nextDetector = new datatype[fConfigFile.getProblemSize()];
-                std::cout << detectors->size() << "/" << fConfigFile.getMaxDetectors() << std::endl;
-            }
-        }
-    } while (detectors->size() < fConfigFile.getMaxDetectors());
-
-    if (nextDetector != *detectors->cend())
-    {
-        delete[] nextDetector;
-    }
-    out = (out + 1) % DETECTOR_BAG_SIZE;
 }
