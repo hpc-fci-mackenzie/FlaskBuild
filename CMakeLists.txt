@@ -27,6 +27,7 @@ set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
 set(THREADS_PREFER_PTHREAD_FLAG TRUE)
 find_package(Threads REQUIRED)
 
+find_package(OpenMP REQUIRED)
 add_executable(nsa nsa.cpp ConfigFile.cpp Dataset.cpp Detector.cpp Geometry.cpp)
-
-target_link_libraries (nsa ${CMAKE_THREAD_LIBS_INIT})
+target_compile_options(nsa PUBLIC -Wall ${OpenMP_CXX_FLAGS})
+target_link_libraries(nsa ${OpenMP_CXX_FLAGS})
