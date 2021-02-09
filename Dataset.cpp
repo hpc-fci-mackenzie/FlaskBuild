@@ -18,8 +18,6 @@ std::vector<datatype *> *Dataset::readDataset()
     csv::CSVFormat format;
     format.trim({' ', '\t'});
     format.column_names(none);
-    std::cout << "esse eh o filename:" << fFilename << "\n" << fProblemSize
-              << std::endl;
     csv::CSVReader reader(fFilename.c_str(), format);
     for (csv::CSVRow &row : reader)
     {
