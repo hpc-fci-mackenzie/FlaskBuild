@@ -1,10 +1,11 @@
 #include "Detector.hpp"
-#include <assert.h>
 #include <cstdlib>
 #include <iostream>
 #include <cmath>
+#include <queue>
 #include <set>
 #include <string>
+#include "omp.h"
 #include "Debug.hpp"
 #include "Datatype.hpp"
 #include "Geometry.hpp"
@@ -28,53 +29,53 @@ void Detector::randomVector(datatype *vector)
     }
 }
 
-void Detector::producer(buffer_t *b, datatype *detector)
-{
-    pthread_mutex_lock(&b->mutex);
-    while (b->occupied >= DETECTOR_BAG_SIZE)
-        pthread_cond_wait(&b->less, &b->mutex);
-    assert(b->occupied < DETECTOR_BAG_SIZE);
-
-    b->buf[b->nextin] = detector;
-    randomVector(b->buf[b->nextin]);
-    b->nextin %= DETECTOR_BAG_SIZE;
-    b->occupied++;
-    pthread_cond_signal(&b->more);
-    pthread_mutex_unlock(&b->mutex);
-}
-
-void Detector::consumer(buffer_t *b, datatype *detector, std::vector<datatype *> *detectors)
-{
-    pthread_mutex_lock(&b->mutex);
-    while (b->occupied <= 0)
-        pthread_cond_wait(&b->more, &b->mutex);
-    assert(b->occupied > 0);
-    detector = b->buf[b->nextout++];
-    if (!fGeometry.matches(detector, fSelfDataset, fConfigFile.getMinDist()))
-    {
-        if (!fGeometry.matches(detector, detectors, 0.0))
-        {
-            detectors->push_back(detector);
-            detector = new datatype[fConfigFile.getProblemSize()];
-            std::cout << detectors->size() << "/" << fConfigFile.getMaxDetectors() << std::endl;
-        }
-    }
-    b->nextout %= DETECTOR_BAG_SIZE;
-    b->occupied--;
-    pthread_cond_signal(&b->less);
-    pthread_mutex_unlock(&b->mutex);
-}
-
 std::vector<datatype *> *Detector::generateDetectors()
 {
     std::vector<datatype *> *detectors = new std::vector<datatype *>();
     std::cout << "Generating detectors..." << std::endl;
     datatype *detector = new datatype[fConfigFile.getProblemSize()];
+    std::queue<datatype *> detectorBag;
+    int flag = 0;
+    datatype *auxiliaryDetector;
     do
     {
-        producer(fDetectorBag, detector);
-        consumer(fDetectorBag, detector, detectors);
-
+#pragma omp parallel sections
+        {
+#pragma omp section
+            {
+                while(detectorBag.size() < DETECTOR_BAG_SIZE){
+                    detectorBag.push(detector);
+                    randomVector(detectorBag.front());
+                    auxiliaryDetector = detectorBag.front();
+                    detectorBag.pop();
+                    detectorBag.push(auxiliaryDetector);
+                }
+                randomVector(detector);
+#pragma omp flush
+                flag = 1;
+#pragma omp flush(flag)
+            }
+#pragma omp section
+            {
+#pragma omp flush(flag)
+                while (flag != 1)
+                {
+#pragma omp flush(flag)
+                }
+#pragma omp flush
+                detector = detectorBag.front();
+                if (!fGeometry.matches(detector, fSelfDataset, fConfigFile.getMinDist()))
+                {
+                    if (!fGeometry.matches(detector, detectors, 0.0))
+                    {
+                        detectors->push_back(detector);
+                        detector = new datatype[fConfigFile.getProblemSize()];
+                        std::cout << detectors->size() << "/" << fConfigFile.getMaxDetectors() << std::endl;
+                    }
+                }
+                detectorBag.pop();
+            }
+        }
     } while (detectors->size() < fConfigFile.getMaxDetectors());
 
     if (detector != *detectors->cend())
