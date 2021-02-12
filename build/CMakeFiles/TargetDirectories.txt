@@ -1,0 +1,3 @@
+/home/daniel/projetos/FlaskBuild/build/CMakeFiles/rebuild_cache.dir
+/home/daniel/projetos/FlaskBuild/build/CMakeFiles/edit_cache.dir
+/home/daniel/projetos/FlaskBuild/build/CMakeFiles/nsa.dir

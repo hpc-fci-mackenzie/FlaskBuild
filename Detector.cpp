@@ -34,57 +34,55 @@ std::vector<datatype *> *Detector::generateDetectors()
     std::vector<datatype *> *detectors = new std::vector<datatype *>();
     std::cout << "Generating detectors..." << std::endl;
     datatype *detector = new datatype[fConfigFile.getProblemSize()];
-    std::queue<datatype *> detectorBag;
-    int flag = 0;
-    datatype *auxiliaryDetector;
-    do
-    {
+    std::queue<datatype *> *detectorBag = new std::queue<datatype *>();
+    omp_lock_t lck;
+    omp_init_lock(&lck);
+
 #pragma omp parallel sections
+    {
+#pragma omp section
+        //producer thread
         {
-#pragma omp section
+            do
             {
-                while(detectorBag.size() < DETECTOR_BAG_SIZE){
-                    detectorBag.push(detector);
-                    randomVector(detectorBag.front());
-                    auxiliaryDetector = detectorBag.front();
-                    detectorBag.pop();
-                    detectorBag.push(auxiliaryDetector);
+                while (detectorBag->size() < DETECTOR_BAG_SIZE)
+                {
+                    omp_set_lock(&lck);
+                    detectorBag->push(detector);
+                    randomVector(detectorBag->back());
+                    omp_unset_lock(&lck);
                 }
-                randomVector(detector);
-#pragma omp flush
-                flag = 1;
-#pragma omp flush(flag)
-            }
+            } while (detectors->size() < fConfigFile.getMaxDetectors());
+        }
 #pragma omp section
+        //consumer thread
+        {
+            while (detectorBag->size() > 0)
             {
-#pragma omp flush(flag)
-                while (flag != 1)
+
+                do
                 {
-#pragma omp flush(flag)
-                }
-#pragma omp flush
-                detector = detectorBag.front();
-                if (!fGeometry.matches(detector, fSelfDataset, fConfigFile.getMinDist()))
-                {
-                    if (!fGeometry.matches(detector, detectors, 0.0))
+                    detector = detectorBag->front();
+                    omp_set_lock(&lck);
+                    detectorBag->pop();
+                    omp_unset_lock(&lck);
+                    if (!fGeometry.matches(detector, fSelfDataset, fConfigFile.getMinDist()))
                     {
-                        detectors->push_back(detector);
-                        detector = new datatype[fConfigFile.getProblemSize()];
-                        std::cout << detectors->size() << "/" << fConfigFile.getMaxDetectors() << std::endl;
+                        if (!fGeometry.matches(detector, detectors, 0.0))
+                        {
+                            detectors->push_back(detector);
+                            detector = new datatype[fConfigFile.getProblemSize()];
+                            std::cout << detectors->size() << "/" << fConfigFile.getMaxDetectors() << std::endl;
+                        }
                     }
-                }
-                detectorBag.pop();
+                } while (detectors->size() < fConfigFile.getMaxDetectors());
             }
         }
-    } while (detectors->size() < fConfigFile.getMaxDetectors());
-
-    if (detector != *detectors->cend())
-    {
-        delete[] detector;
     }
-
+    omp_destroy_lock(&lck);
     return detectors;
 }
+
 result Detector::applyDetectors(std::vector<datatype *> *detectors)
 {
     std::set<int> *detected = new std::set<int>();

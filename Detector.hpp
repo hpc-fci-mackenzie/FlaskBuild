@@ -5,7 +5,7 @@
 #include "Datatype.hpp"
 #include "Geometry.hpp"
 #include "Result.hpp"
-#define DETECTOR_BAG_SIZE 64000
+#define DETECTOR_BAG_SIZE 64
 
 class Detector
 {
