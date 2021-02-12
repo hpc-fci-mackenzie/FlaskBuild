@@ -33,7 +33,7 @@ std::vector<datatype *> *Detector::generateDetectors()
 {
     std::vector<datatype *> *detectors = new std::vector<datatype *>();
     std::cout << "Generating detectors..." << std::endl;
-    datatype *detector = new datatype[fConfigFile.getProblemSize()];
+    
     std::queue<datatype *> *detectorBag = new std::queue<datatype *>();
     omp_lock_t lck;
     omp_init_lock(&lck);
@@ -47,9 +47,10 @@ std::vector<datatype *> *Detector::generateDetectors()
             {
                 while (detectorBag->size() < DETECTOR_BAG_SIZE)
                 {
+                    datatype *detector = new datatype[fConfigFile.getProblemSize()];
+                    randomVector(detector);
                     omp_set_lock(&lck);
                     detectorBag->push(detector);
-                    randomVector(detectorBag->back());
                     omp_unset_lock(&lck);
                 }
             } while (detectors->size() < fConfigFile.getMaxDetectors());
@@ -57,29 +58,32 @@ std::vector<datatype *> *Detector::generateDetectors()
 #pragma omp section
         //consumer thread
         {
-            while (detectorBag->size() > 0)
-            {
-
                 do
                 {
-                    detector = detectorBag->front();
+                    while (detectorBag->empty()) ;
                     omp_set_lock(&lck);
+                    datatype *detector = detectorBag->front();
                     detectorBag->pop();
                     omp_unset_lock(&lck);
+                
                     if (!fGeometry.matches(detector, fSelfDataset, fConfigFile.getMinDist()))
                     {
                         if (!fGeometry.matches(detector, detectors, 0.0))
                         {
                             detectors->push_back(detector);
-                            detector = new datatype[fConfigFile.getProblemSize()];
                             std::cout << detectors->size() << "/" << fConfigFile.getMaxDetectors() << std::endl;
                         }
                     }
                 } while (detectors->size() < fConfigFile.getMaxDetectors());
-            }
         }
     }
     omp_destroy_lock(&lck);
+    while(!detectorBag->empty()){
+        datatype *detector = detectorBag->front();
+        detectorBag->pop();
+        delete[] detector;
+    }
+    delete detectorBag;
     return detectors;
 }
 
