@@ -35,13 +35,11 @@ std::vector<datatype *> *Detector::generateDetectors()
     std::vector<datatype *> *detectors = new std::vector<datatype *>();
     std::cout << "Generating detectors..." << std::endl;
     std::queue<datatype *> *detectorBag = new std::queue<datatype *>();
-    omp_lock_t lck;
     sem_t occupied, empty, pmut, cmut;
     sem_init(&occupied, 0, 0);
     sem_init(&empty, 0, DETECTOR_BAG_SIZE);
     sem_init(&pmut, 0, 1);
     sem_init(&cmut, 0, 1);
-    omp_init_lock(&lck);
 
 #pragma omp parallel sections
     {
@@ -80,14 +78,15 @@ std::vector<datatype *> *Detector::generateDetectors()
                 {
                     if (!fGeometry.matches(detector, detectors, 0.0))
                     {
+                        sem_wait(&cmut);
                         detectors->push_back(detector);
+                        sem_post(&cmut);
                         std::cout << detectors->size() << "/" << fConfigFile.getMaxDetectors() << std::endl;
                     }
                 }
             } while (detectors->size() < fConfigFile.getMaxDetectors());
         }
     }
-    omp_destroy_lock(&lck);
     while (!detectorBag->empty())
     {
         datatype *detector = detectorBag->front();
